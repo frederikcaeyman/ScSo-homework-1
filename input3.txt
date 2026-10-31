@@ -1,0 +1,18 @@
+# number of inputs to the network
+9
+# number of outputs to the network
+2
+# number of training samples
+2
+# gamma, regularisation parameter
+0.01
+# alpha, training rate
+0.1
+# number of epochs
+200
+# training input, each row is a sample
+1 1 1 1 0 1 1 1 1
+0 1 0 1 0 0 1 1 1
+# training output, each row is a sample
+1 0
+0 1

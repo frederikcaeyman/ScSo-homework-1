@@ -1,0 +1,113 @@
+Q1
+
+Let n = n_input, m = n_output, and P = nm + m be the total number of
+weights and biases. The counts below are for the complete gradient for one
+input/target pair, as implemented in test_gradients.cpp, including the
+forward pass and regularization.
+
+Counting convention: each floating-point addition, subtraction,
+multiplication, division, and unary negation counts as one operation.
+Assignments, allocation, indexing, comparisons, and integer loop arithmetic
+are not counted. A multiply followed by an addition counts as two flops.
+For the main formulas, count one exp evaluation as one operation as well.
+This is an operation-count convention, not a claim that exp takes the same
+execution time as an addition. I count operations as written in the code,
+before compiler optimization.
+
+Forward pass:
+- W*x: 2nm flops. The supplied tws multiply initializes each result to zero
+  and performs one multiplication and one addition per matrix entry.
+- Add b: m flops.
+- Sigmoid: 4m operations (negation, exp, addition, division per output).
+Total: F = 2nm + 5m.
+
+One loss evaluation:
+- Forward pass: F.
+- Subtract the target: m.
+- Squared residual norm using dot(y,y): 2m.
+- Squared coefficient norm using dot(coefficients,coefficients): 2P.
+- Scale and combine both terms: 4.
+Thus C_loss = F + 3m + 2P + 4 = 4nm + 10m + 4.
+The dot-product counts follow the supplied implementation, which accumulates
+from zero with one multiplication and one addition per entry.
+
+Finite differences:
+Each of the P coefficients requires two complete loss evaluations.
+Additionally, each iteration uses two operations to form original+h and
+original-h, and three to evaluate (loss_plus-loss_minus)/(2*h).
+Restoring the coefficient is an assignment and is not a flop.
+
+C_FD = P * (2*C_loss + 5)
+     = (nm + m) * (8nm + 20m + 13)
+     = 8n^2*m^2 + 28n*m^2 + 20m^2 + 13nm + 13m.
+
+Backpropagation:
+- One forward pass: 2nm + 5m.
+- t = (prediction-target)*prediction*(1-prediction): 4m.
+- Weight gradient t[i]*x[j] + gamma*W(i,j): 3nm.
+- Bias gradient t[i] + gamma*b[i]: 2m.
+
+C_BP = 5nm + 11m.
+
+Therefore finite differences has cost proportional to P full loss
+evaluations, whereas backpropagation needs only one forward pass followed
+by direct derivative calculations. This motivates using backpropagation
+for training.
+
+If exp is reported separately instead of counted as one operation, the
+same implementation has the following arithmetic counts:
+C_FD = (nm + m) * (8nm + 18m + 13), plus 2m(nm + m) exp evaluations;
+C_BP = 5nm + 10m, plus m exp evaluations.
+These expressions still count unary negation as one operation. If unary
+sign changes are excluded from the flop convention, subtract the number
+of exp evaluations from the respective arithmetic count above, since each
+sigmoid has one unary negation.
+
+Q2
+
+1. Backpropagation and reuse of the common chain-rule factor.
+Training uses backpropagation instead of finite differences, avoiding two
+complete loss evaluations per coefficient and sample. For each sample,
+compute_delta(y, target) replaces y[i] by the common factor
+t[i] = (prediction[i]-target[i])*prediction[i]*(1-prediction[i]).
+This factor is computed once per output and reused for all associated
+weight derivatives and the bias derivative. The code also
+averages the accumulated data gradient and adds gamma*coefficient only
+once per epoch, instead of repeatedly adding regularization per sample.
+
+2. Allocate temporary vectors once and reuse them.
+The vectors gradient and y are allocated before the training loops and
+reused throughout training, avoiding repeated memory allocations.
+The forward pass uses tws::multiply(W,x,y) to write into existing
+storage, then adds the biases and applies sigmoid in place. The same y
+storage is reused for the backpropagation factor. The gradient is reset
+and reused each epoch. This avoids repeated element-array allocations and
+separate arrays for weighted sums, predictions, and derivative factors.
+
+3. Use views and references to avoid copies.
+Training matrices are passed by const reference, and each sample is stored
+as a column of a column-major matrix. inputs.column(k) and
+targets.column(k) provide views of consecutive sample entries without
+copying them into new vectors. The forward pass accepts either an owning
+vector or a view by const reference. Weight, bias, and gradient views also
+access their existing backing arrays directly. The weight-gradient loops
+visit rows inside each column, matching their contiguous storage order.
+
+Q3
+
+If I started the assignment again, I would plan the shared functionality
+earlier. At first, I did not consider creating my own header files for
+recurring functions, so several helper functions appeared in multiple
+source files. Reading the teaching staff's announcement on Toledo made me
+realize that I could put these functions in shared headers. Doing this from
+the beginning would have avoided duplication and made changes easier to
+maintain.
+
+The assignment also gave me a deeper understanding of the twsmatrix
+repository provided for the course. Using its functionality in a complete
+program helped me understand the differences between the available types
+and operations, when to use them, and how to avoid unnecessary copies.
+
+Finally, implementing both gradient methods helped me understand why
+backpropagation is much more efficient than finite differences for
+training the network.
